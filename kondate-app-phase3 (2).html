@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"/>
+  <title>献立アプリ</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;700;900&family=Cormorant+Garamond:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:#F2F2F2;font-family:'Noto Sans JP',sans-serif;}
+    input:focus,textarea:focus{outline:none;box-shadow:0 0 0 3px rgba(0,0,0,0.08);}
+    button:active{opacity:0.75;}
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15);border-radius:2px;}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    .fade-in{animation:fadeIn 0.3s ease forwards;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef } = React;
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const DAYS = ["月曜日","火曜日","水曜日","木曜日","金曜日","土曜日","日曜日"];
+const DAY_SHORT = ["MON","TUE","WED","THU","FRI","SAT","SUN"];
+const MEALS = ["朝","昼","夜"];
+const MEAL_EMOJI = {朝:"☀️",昼:"🌤",夜:"🌙"};
+const MEAL_COLOR = {朝:"#E8A020",昼:"#E8845A",夜:"#4A6FA5"};
+const SHOP_CATS = ["野菜","肉・魚","乳製品","調味料","主食・粉","常備菜","鍋素材","その他"];
+const FRIDGE_CATS = ["野菜","肉・魚","乳製品・卵","調味料","主食・粉","常備菜","飲み物","その他"];
+const MEMBERS = [
+  {id:"self", name:"自分", icon:"👩‍🍳"},
+  {id:"husband", name:"夫", icon:"👨"},
+  {id:"child", name:"子供", icon:"👶"},
+];
+const AI_ANGLES = [
+  {id:"fridge", label:"冷蔵庫から", icon:"🧊", desc:"残り食材を活かして提案"},
+  {id:"mood", label:"気分・テイスト", icon:"✨", desc:"今日の気分に合わせて提案"},
+  {id:"chef", label:"料理研究家", icon:"👨‍🍳", desc:"プロのスタイルで提案"},
+  {id:"nutrition", label:"栄養バランス", icon:"💪", desc:"栄養面から献立を提案"},
+];
+const TEMPLATES = [
+  {id:"washoku",label:"和食の定番",icon:"🍱",cat:"調味料",items:["だし(昆布・かつお)","醤油","みりん","酒","味噌","砂糖","酢","塩"]},
+  {id:"yoshoku",label:"洋食の定番",icon:"🍝",cat:"調味料",items:["バター","小麦粉","チーズ","トマト缶","オリーブオイル","コンソメ","牛乳","生クリーム"]},
+  {id:"chuka",label:"中華の定番",icon:"🥟",cat:"調味料",items:["ごま油","豆板醤","オイスターソース","鶏がらスープ","甜麺醤","紹興酒","花椒","ラー油"]},
+  {id:"yasai",label:"野菜セット",icon:"🥦",cat:"野菜",items:["玉ねぎ","にんじん","じゃがいも","キャベツ","ほうれん草","ブロッコリー","もやし","きゅうり"]},
+  {id:"niku",label:"肉・魚セット",icon:"🥩",cat:"肉・魚",items:["鶏もも肉","豚こま肉","牛薄切り","鮭","まぐろ(刺身)","えび","ちくわ","ツナ缶"]},
+  {id:"nabe",label:"鍋セット",icon:"🫕",cat:"鍋素材",items:["白菜","春菊","豆腐","えのき","しめじ","豚バラ肉","鶏もも肉","つみれ","鍋スープ"]},
+  {id:"jobi",label:"常備菜",icon:"🥚",cat:"常備菜",items:["キムチ","納豆","もずく","わかめ","しめじ","えのき","卵","豆腐"]},
+];
+
+const gold="#222222", dark="#111111", cream="#FFFFFF";
+
+function initMeals(){const m={};DAYS.forEach(d=>{m[d]={朝:"",昼:"",夜:""};});return m;}
+
+// ── Star Rating Component ────────────────────────────────────────────────
+function StarRating({value, onChange}){
+  return (
+    <div style={{display:"flex",gap:"4px"}}>
+      {[1,2,3,4,5].map(n=>(
+        <span key={n} onClick={()=>onChange(n)} style={{fontSize:"22px",cursor:"pointer",color:n<=value?"#F5C842":"#DDD",transition:"transform 0.1s",display:"inline-block"}}>★</span>
+      ))}
+    </div>
+  );
+}
+
+// ── Review Modal ─────────────────────────────────────────────────────────
+function ReviewModal({dish, dayMeal, existing, onSave, onClose}){
+  const [reviews, setReviews] = useState(
+    existing || MEMBERS.reduce((a,m)=>({...a,[m.id]:{stars:0,comment:"",makeAgain:false,photo:null}}),{})
+  );
+  const fileRefs = useRef({});
+
+  const update = (memberId, field, val) =>
+    setReviews(p=>({...p,[memberId]:{...p[memberId],[field]:val}}));
+
+  const handlePhoto = (memberId, e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => update(memberId,"photo",ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:100,display:"flex",alignItems:"flex-end"}} onClick={onClose}>
+      <div className="fade-in" onClick={e=>e.stopPropagation()} style={{
+        width:"100%",maxWidth:"480px",margin:"0 auto",
+        background:"#FAFAFA",
+        borderRadius:"28px 28px 0 0",padding:"24px 24px 40px",maxHeight:"88vh",overflowY:"auto",
+      }}>
+        {/* Handle */}
+        <div style={{width:"40px",height:"4px",background:"#DDD",borderRadius:"2px",margin:"0 auto 20px"}}/>
+
+        <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"20px",fontWeight:900,color:"#111",marginBottom:"4px",letterSpacing:"-0.5px"}}>
+          {dish} の感想
+        </div>
+        <div style={{fontSize:"12px",color:"#666",marginBottom:"20px"}}>{dayMeal}</div>
+
+        {MEMBERS.map(member=>(
+          <div key={member.id} style={{background:"#FFF",borderRadius:"18px",padding:"16px",marginBottom:"12px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
+              <span style={{fontSize:"22px"}}>{member.icon}</span>
+              <span style={{fontSize:"15px",fontWeight:700,color:"#111"}}>{member.name}</span>
+              {reviews[member.id].makeAgain && (
+                <span style={{marginLeft:"auto",fontSize:"11px",background:"#111",color:"#FFF",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>
+                  また作って！
+                </span>
+              )}
+            </div>
+
+            <StarRating value={reviews[member.id].stars} onChange={v=>update(member.id,"stars",v)}/>
+
+            <textarea
+              value={reviews[member.id].comment}
+              onChange={e=>update(member.id,"comment",e.target.value)}
+              placeholder="コメントを入力…"
+              rows={2}
+              style={{
+                width:"100%",marginTop:"10px",border:"1.5px solid #E8E8E8",
+                borderRadius:"12px",padding:"10px 12px",fontSize:"13px",
+                fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",
+                color:"#111",resize:"none",
+              }}
+            />
+
+            <div style={{display:"flex",gap:"8px",marginTop:"10px",alignItems:"center"}}>
+              <button onClick={()=>update(member.id,"makeAgain",!reviews[member.id].makeAgain)} style={{
+                padding:"7px 14px",border:"none",borderRadius:"10px",cursor:"pointer",
+                fontFamily:"'Noto Sans JP',sans-serif",fontSize:"12px",fontWeight:700,
+                background:reviews[member.id].makeAgain?"#111":"rgba(184,149,106,0.12)",
+                "#FFF":"#8B7355",transition:"all 0.2s",
+              }}>
+                {reviews[member.id].makeAgain?"❤️ また作って！":"🤍 また作って"}
+              </button>
+
+              <label style={{
+                padding:"7px 12px",border:"2px dashed rgba(184,149,106,0.3)",borderRadius:"10px",
+                cursor:"pointer",fontSize:"12px",color:"#666",fontWeight:600,
+              }}>
+                📷 写真
+                <input ref={el=>fileRefs.current[member.id]=el} type="file" accept="image/*" style={{display:"none"}}
+                  onChange={e=>handlePhoto(member.id,e)}/>
+              </label>
+
+              {reviews[member.id].photo && (
+                <img src={reviews[member.id].photo} alt="" style={{width:"40px",height:"40px",borderRadius:"8px",objectFit:"cover"}}/>
+              )}
+            </div>
+          </div>
+        ))}
+
+        <button onClick={()=>onSave(reviews)} style={{
+          width:"100%",padding:"14px",background:"#111",
+          color:"#FFF",border:"none",borderRadius:"16px",cursor:"pointer",
+          fontFamily:"'DM Sans','Noto Sans JP',sans-serif",fontSize:"15px",fontWeight:700,
+          boxShadow:"0 2px 10px rgba(0,0,0,0.15)",marginTop:"4px",
+        }}>保存する</button>
+      </div>
+    </div>
+  );
+}
+
+// ── AI Suggest Modal ─────────────────────────────────────────────────────
+function AISuggestModal({fridge, meals, onApply, onClose}){
+  const [angle, setAngle] = useState(null);
+  const [moodInput, setMoodInput] = useState("");
+  const [chefInput, setChefInput] = useState("栗原はるみ");
+  const [nutritionInput, setNutritionInput] = useState("野菜不足を補いたい");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  const fridgeItems = fridge.map(f=>f.name).join("、")||"なし";
+  const weekMeals = Object.values(meals).flatMap(d=>Object.values(d)).filter(Boolean);
+
+  const buildPrompt = () => {
+    if(angle==="fridge") return `冷蔵庫にある食材: ${fridgeItems}\nこの食材をできるだけ使い切る、今週の献立（朝・昼・夜×7日）を提案してください。`;
+    if(angle==="mood") return `気分・リクエスト: 「${moodInput||"さっぱりしたもの"}」\nこの気分に合う、今週の献立（朝・昼・夜×7日）を提案してください。冷蔵庫: ${fridgeItems}`;
+    if(angle==="chef") return `料理スタイル: 「${chefInput}」風\nこのスタイルで今週の献立（朝・昼・夜×7日）を提案してください。冷蔵庫: ${fridgeItems}`;
+    if(angle==="nutrition") return `栄養面のリクエスト: 「${nutritionInput}」\n栄養バランスを考慮した今週の献立（朝・昼・夜×7日）を提案してください。冷蔵庫: ${fridgeItems}`;
+  };
+
+  const suggest = async () => {
+    setLoading(true); setError(""); setResult(null);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1000,
+          system:`あなたは家庭料理の献立提案アシスタントです。
+JSONのみで返答してください。説明文・バッククォートなし。
+形式: {"月曜日":{"朝":"","昼":"","夜":""},"火曜日":{...},...,"日曜日":{...}}
+・料理名は短く（例：「肉じゃが」「鮭の塩焼き」）
+・朝は軽め（トースト、おにぎり、シリアル等）
+・バランスよく、かぶりを避ける`,
+          messages:[{role:"user",content:buildPrompt()}]
+        })
+      });
+      const data = await res.json();
+      const text = data.content.map(c=>c.text||"").join("");
+      const clean = text.replace(/```json|```/g,"").trim();
+      setResult(JSON.parse(clean));
+    } catch(e){ setError("提案の取得に失敗しました。再度お試しください。"); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:100,display:"flex",alignItems:"flex-end"}} onClick={onClose}>
+      <div className="fade-in" onClick={e=>e.stopPropagation()} style={{
+        width:"100%",maxWidth:"480px",margin:"0 auto",
+        background:"#FAFAFA",
+        borderRadius:"28px 28px 0 0",padding:"24px 24px 40px",maxHeight:"90vh",overflowY:"auto",
+      }}>
+        <div style={{width:"40px",height:"4px",background:"#DDD",borderRadius:"2px",margin:"0 auto 20px"}}/>
+        <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"20px",fontWeight:900,color:"#111",marginBottom:"4px",letterSpacing:"-0.5px"}}>
+          🤖 AI献立提案
+        </div>
+        <div style={{fontSize:"12px",color:"#666",marginBottom:"20px"}}>切り口を選んでください</div>
+
+        {/* Angle selector */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"16px"}}>
+          {AI_ANGLES.map(a=>(
+            <button key={a.id} onClick={()=>{setAngle(a.id);setResult(null);setError("");}} style={{
+              padding:"14px 10px",border:angle===a.id?"1.5px solid #111":"1.5px solid #E8E8E8",
+              borderRadius:"16px",cursor:"pointer",textAlign:"left",
+              background:angle===a.id?"#F0F0F0":"rgba(255,255,255,0.6)",
+              fontFamily:"'Noto Sans JP',sans-serif",transition:"all 0.2s",
+            }}>
+              <div style={{fontSize:"24px",marginBottom:"4px"}}>{a.icon}</div>
+              <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{a.label}</div>
+              <div style={{fontSize:"11px",color:"#666"}}>{a.desc}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Sub inputs */}
+        {angle==="mood" && (
+          <input value={moodInput} onChange={e=>setMoodInput(e.target.value)} placeholder="例：さっぱり・がっつり・エスニック…"
+            style={{width:"100%",border:"1.5px solid #E0E0E0",borderRadius:"12px",padding:"10px 14px",fontSize:"14px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#111",marginBottom:"12px"}}/>
+        )}
+        {angle==="chef" && (
+          <input value={chefInput} onChange={e=>setChefInput(e.target.value)} placeholder="例：栗原はるみ・有元葉子・土井善晴…"
+            style={{width:"100%",border:"1.5px solid #E0E0E0",borderRadius:"12px",padding:"10px 14px",fontSize:"14px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#111",marginBottom:"12px"}}/>
+        )}
+        {angle==="nutrition" && (
+          <input value={nutritionInput} onChange={e=>setNutritionInput(e.target.value)} placeholder="例：野菜不足・タンパク質を増やしたい…"
+            style={{width:"100%",border:"1.5px solid #E0E0E0",borderRadius:"12px",padding:"10px 14px",fontSize:"14px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#111",marginBottom:"12px"}}/>
+        )}
+        {angle==="fridge" && (
+          <div style={{background:"#F5F5F5",borderRadius:"12px",padding:"10px 14px",marginBottom:"12px",fontSize:"12px",color:"#666"}}>
+            🧊 冷蔵庫: {fridgeItems}
+          </div>
+        )}
+
+        {angle && !loading && !result && (
+          <button onClick={suggest} style={{
+            width:"100%",padding:"14px",background:"#111",
+            color:"#FFF",border:"none",borderRadius:"16px",cursor:"pointer",
+            fontFamily:"'DM Sans','Noto Sans JP',sans-serif",fontSize:"15px",fontWeight:700,
+            boxShadow:"0 2px 10px rgba(0,0,0,0.15)",
+          }}>✨ 提案を生成する</button>
+        )}
+
+        {loading && (
+          <div style={{textAlign:"center",padding:"28px",color:"#666",fontSize:"13px"}}>
+            <div style={{fontSize:"32px",marginBottom:"10px",display:"inline-block",animation:"spin 1s linear infinite"}}>⏳</div>
+            <div>AIが献立を考えています…</div>
+          </div>
+        )}
+
+        {error && <div style={{background:"#FFF0F0",borderRadius:"10px",padding:"10px 12px",fontSize:"12px",color:"#CC3333",marginBottom:"8px"}}>{error}</div>}
+
+        {result && (
+          <div className="fade-in">
+            <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"10px"}}>提案された献立</div>
+            <div style={{background:"#FFF",borderRadius:"16px",overflow:"hidden",marginBottom:"14px"}}>
+              {DAYS.map((day,i)=>(
+                <div key={day} style={{padding:"10px 14px",borderBottom:i<6?"1px solid rgba(184,149,106,0.1)":"none"}}>
+                  <div style={{fontSize:"11px",fontWeight:700,color:"#555",letterSpacing:"1px",marginBottom:"4px"}}>{DAY_SHORT[i]}</div>
+                  <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                    {MEALS.map(m=>(
+                      <span key={m} style={{fontSize:"12px",color:"#111",background:`${MEAL_COLOR[m]}18`,padding:"2px 8px",borderRadius:"8px"}}>
+                        {MEAL_EMOJI[m]} {result[day]?.[m]||"−"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:"8px"}}>
+              <button onClick={()=>onApply(result)} style={{
+                flex:1,padding:"13px",background:"#111",
+                color:"#FFF",border:"none",borderRadius:"14px",cursor:"pointer",
+                fontFamily:"'Noto Sans JP',sans-serif",fontSize:"14px",fontWeight:700,
+              }}>この献立を適用する</button>
+              <button onClick={suggest} style={{
+                padding:"13px 14px",background:"#EBEBEB",color:"#666",
+                border:"none",borderRadius:"14px",cursor:"pointer",
+                fontFamily:"'Noto Sans JP',sans-serif",fontSize:"12px",fontWeight:600,
+              }}>再提案</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────
+function App(){
+  const [activeTab,setActiveTab] = useState("kondate");
+  const [activeDay,setActiveDay] = useState(0);
+
+  // Kondate
+  const [meals,setMeals] = useState(initMeals());
+  const [editCell,setEditCell] = useState(null);
+  const [editVal,setEditVal] = useState("");
+  const [showAISuggest,setShowAISuggest] = useState(false);
+
+  // Reviews: { "月曜日-夜-肉じゃが": { self:{stars,comment,makeAgain,photo}, husband:{...}, child:{...} } }
+  const [reviews,setReviews] = useState({});
+  const [reviewModal,setReviewModal] = useState(null); // {day,meal,dish}
+  const [activeReviewLog,setActiveReviewLog] = useState(null);
+
+  // Shopping
+  const [shopping,setShopping] = useState([
+    {id:1,text:"鶏もも肉",done:false,cat:"肉・魚"},
+    {id:2,text:"玉ねぎ",done:false,cat:"野菜"},
+    {id:3,text:"醤油",done:true,cat:"調味料"},
+  ]);
+  const [newItem,setNewItem] = useState("");
+  const [newCat,setNewCat] = useState("野菜");
+  const [showTemplates,setShowTemplates] = useState(false);
+  const [showAutoplan,setShowAutoplan] = useState(false);
+  const [aiSuggestions,setAiSuggestions] = useState([]);
+  const [aiLoading,setAiLoading] = useState(false);
+  const [aiError,setAiError] = useState("");
+
+  // Fridge
+  const [fridge,setFridge] = useState([
+    {id:1,name:"玉ねぎ",qty:"3個",cat:"野菜",exp:""},
+    {id:2,name:"卵",qty:"8個",cat:"乳製品・卵",exp:""},
+    {id:3,name:"醤油",qty:"半分",cat:"調味料",exp:""},
+    {id:4,name:"鶏もも肉",qty:"300g",cat:"肉・魚",exp:"2026-03-10"},
+    {id:5,name:"キムチ",qty:"200g",cat:"常備菜",exp:""},
+  ]);
+  const [newFridge,setNewFridge] = useState({name:"",qty:"",cat:"野菜",exp:""});
+  const [showFridgeAdd,setShowFridgeAdd] = useState(false);
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  const shopCatToFridgeCat = c=>({野菜:"野菜","肉・魚":"肉・魚",乳製品:"乳製品・卵",調味料:"調味料","主食・粉":"主食・粉",常備菜:"常備菜","鍋素材":"その他",その他:"その他"}[c]||"その他");
+  const today = new Date();
+  const getExpStatus = exp=>{
+    if(!exp) return null;
+    const diff=Math.ceil((new Date(exp)-today)/(86400000));
+    return diff<0?"expired":diff<=2?"soon":"ok";
+  };
+
+  const reviewKey = (day,meal,dish) => `${day}-${meal}-${dish}`;
+  const getDishReview = (day,meal,dish) => reviews[reviewKey(day,meal,dish)];
+  const getAvgStars = (rv) => {
+    if(!rv) return 0;
+    const vals=Object.values(rv).map(r=>r.stars).filter(s=>s>0);
+    return vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0;
+  };
+  const hasMakeAgain = rv => rv && Object.values(rv).some(r=>r.makeAgain);
+
+  // Kondate handlers
+  const startEdit=(day,meal)=>{setEditCell(`${day}-${meal}`);setEditVal(meals[day][meal]);};
+  const saveEdit=(day,meal)=>{
+    const next=editVal.trim();
+    const prev=meals[day][meal];
+    setMeals(p=>({...p,[day]:{...p[day],[meal]:next}}));
+    setEditCell(null);
+    if(next&&next!==prev) setFridge(f=>f.filter(x=>x.name!==next));
+  };
+  const applyAISuggest=(result)=>{
+    setMeals(p=>{
+      const next={...p};
+      DAYS.forEach(day=>{ if(result[day]) next[day]={...p[day],...result[day]}; });
+      return next;
+    });
+    setShowAISuggest(false);
+  };
+
+  // Shopping handlers
+  const toggleShop=id=>{
+    setShopping(p=>p.map(i=>{
+      if(i.id!==id) return i;
+      const nowDone=!i.done;
+      if(nowDone){ setFridge(f=>f.some(x=>x.name===i.text)?f:[...f,{id:Date.now(),name:i.text,qty:"",cat:shopCatToFridgeCat(i.cat),exp:""}]); }
+      else { setFridge(f=>f.filter(x=>x.name!==i.text)); }
+      return {...i,done:nowDone};
+    }));
+  };
+  const removeShop=id=>setShopping(p=>p.filter(i=>i.id!==id));
+  const addShop=()=>{ if(!newItem.trim()) return; setShopping(p=>[...p,{id:Date.now(),text:newItem,done:false,cat:newCat}]); setNewItem(""); };
+  const addTemplate=tmpl=>{ setShopping(p=>{ const ex=new Set(p.map(x=>x.text)); return [...p,...tmpl.items.filter(t=>!ex.has(t)).map((t,i)=>({id:Date.now()+i,text:t,done:false,cat:tmpl.cat}))]; }); setShowTemplates(false); };
+
+  const generateAutoplan=async()=>{
+    const weekMealNames=Object.values(meals).flatMap(d=>Object.values(d)).filter(Boolean);
+    if(!weekMealNames.length){setAiError("先に献立を入力してください。");return;}
+    const fridgeNames=new Set(fridge.map(f=>f.name));
+    const shopNames=new Set(shopping.map(s=>s.text));
+    setAiLoading(true);setAiError("");setAiSuggestions([]);
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        model:"claude-sonnet-4-20250514",max_tokens:1000,
+        system:`料理の食材管理アシスタント。JSONのみ返答。形式:[{"text":"食材名","cat":"カテゴリ","reason":"料理名"}] catは:野菜,肉・魚,乳製品,調味料,主食・粉,常備菜,その他 のいずれか。基本調味料は除外。1料理あたり2〜4品の主要食材のみ。`,
+        messages:[{role:"user",content:`献立:${weekMealNames.join("、")} / 冷蔵庫:${[...fridgeNames].join("、")||"なし"} / 買い物済み:${[...shopNames].join("、")||"なし"} → 不足食材をJSONで。`}]
+      })});
+      const data=await res.json();
+      const text=data.content.map(c=>c.text||"").join("");
+      setAiSuggestions(JSON.parse(text.replace(/```json|```/g,"").trim()));
+    }catch(e){setAiError("取得に失敗しました。再度お試しください。");}
+    setAiLoading(false);
+  };
+  const addSuggestion=item=>{setShopping(p=>p.some(x=>x.text===item.text)?p:[...p,{id:Date.now(),...item,done:false}]);setAiSuggestions(p=>p.filter(x=>x.text!==item.text));};
+  const addAllSuggestions=()=>{setShopping(p=>{const ex=new Set(p.map(x=>x.text));return [...p,...aiSuggestions.filter(x=>!ex.has(x.text)).map((x,i)=>({id:Date.now()+i,...x,done:false}))];});setAiSuggestions([]);setShowAutoplan(false);};
+
+  // Fridge handlers
+  const removeFridge=id=>setFridge(p=>p.filter(i=>i.id!==id));
+  const addFridgeItem=()=>{ if(!newFridge.name.trim()) return; setFridge(p=>[...p,{id:Date.now(),...newFridge}]); setNewFridge({name:"",qty:"",cat:"野菜",exp:""}); setShowFridgeAdd(false); };
+
+  // Review log: all dishes with reviews or make-again
+  const reviewLog = Object.entries(reviews).map(([key,rv])=>{
+    const [day,meal,...dishParts]=key.split("-");
+    const dish=dishParts.join("-");
+    return {key,day,meal,dish,rv,avg:getAvgStars(rv),makeAgain:hasMakeAgain(rv)};
+  }).filter(r=>r.avg>0||r.makeAgain);
+
+  // Derived
+  const shopDone=shopping.filter(i=>i.done).length;
+  const shopTotal=shopping.length;
+  const fridgeByGroup=FRIDGE_CATS.reduce((a,c)=>{const items=fridge.filter(f=>f.cat===c);if(items.length)a[c]=items;return a;},{});
+  const shopByGroup=SHOP_CATS.reduce((a,c)=>{const items=shopping.filter(i=>i.cat===c);if(items.length)a[c]=items;return a;},{});
+
+  const tabs=[
+    {key:"kondate",label:"献立",icon:"📋"},
+    {key:"review",label:"感想",icon:"💬"},
+    {key:"fridge",label:"冷蔵庫",icon:"🧊"},
+    {key:"shopping",label:"買い物",icon:"🛒"},
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#F2F2F2",maxWidth:"480px",margin:"0 auto",position:"relative"}}>
+      {/* Header */}
+      <header style={{padding:"24px 24px 14px",position:"relative",zIndex:1}}>
+        <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"10px",letterSpacing:"5px",textTransform:"uppercase",color:"#999",marginBottom:"5px",fontWeight:400}}>SEMAINE DU MENU</div>
+            <h1 style={{fontFamily:"'DM Sans','Noto Sans JP',sans-serif",fontSize:"34px",fontWeight:900,color:"#111",lineHeight:1,letterSpacing:"-1.5px"}}>
+              今週の<span style={{color:"#111"}}>献立</span>
+            </h1>
+          </div>
+          <button onClick={()=>setShowAISuggest(true)} style={{
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+            width:"54px",height:"54px",background:"#111",
+            borderRadius:"16px",border:"none",cursor:"pointer",
+            boxShadow:"0 4px 14px rgba(0,0,0,0.18)",gap:"2px",
+          }}>
+            <span style={{fontSize:"20px"}}>🤖</span>
+            <span style={{fontSize:"9px",color:"#FFF",fontWeight:700,letterSpacing:"0.5px"}}>AI提案</span>
+          </button>
+        </div>
+        <div style={{marginTop:"8px",fontSize:"12px",color:"#999"}}>
+          {today.toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"})} の週
+        </div>
+      </header>
+
+      {/* Tabs */}
+      <div style={{display:"flex",padding:"0 24px",gap:"6px",marginBottom:"16px",position:"relative",zIndex:1}}>
+        {tabs.map(t=>(
+          <button key={t.key} onClick={()=>setActiveTab(t.key)} style={{
+            flex:1,padding:"10px 4px",border:"none",borderRadius:"12px",cursor:"pointer",
+            fontFamily:"'Noto Sans JP',sans-serif",fontSize:"11px",fontWeight:700,
+            background:activeTab===t.key?"#111":"#FFF",
+            color:activeTab===t.key?"#FFF":"#666",
+            boxShadow:activeTab===t.key?"0 2px 10px rgba(0,0,0,0.2)":"0 1px 4px rgba(0,0,0,0.06)",
+            transition:"all 0.2s",
+          }}>
+            <div style={{fontSize:"15px",marginBottom:"1px"}}>{t.icon}</div>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ KONDATE ═══ */}
+      {activeTab==="kondate" && (
+        <div style={{padding:"0 24px 100px",zIndex:1,position:"relative"}}>
+          <div style={{display:"flex",gap:"6px",marginBottom:"16px",overflowX:"auto",paddingBottom:"4px"}}>
+            {DAYS.map((d,i)=>(
+              <button key={d} onClick={()=>setActiveDay(i)} style={{
+                flexShrink:0,width:"44px",height:"44px",borderRadius:"12px",border:"none",cursor:"pointer",
+                fontFamily:"'DM Sans',serif",fontSize:"10px",fontWeight:700,letterSpacing:"1px",
+                background:activeDay===i?"#111":"#FFF",
+                color:activeDay===i?"#FFF":"#888",
+                boxShadow:activeDay===i?"0 4px 12px rgba(0,0,0,0.2)":"0 1px 4px rgba(0,0,0,0.06)",
+                transition:"all 0.2s",
+              }}>{DAY_SHORT[i]}</button>
+            ))}
+          </div>
+
+          {DAYS.map((day,i)=>{
+            const isActive=activeDay===i;
+            const hasMeal=Object.values(meals[day]).some(v=>v);
+            return (
+              <div key={day} onClick={()=>setActiveDay(i)} style={{
+                background:isActive?"#FFF":"rgba(255,255,255,0.6)",
+                borderRadius:"16px",padding:isActive?"18px":"13px 18px",marginBottom:"8px",cursor:"pointer",
+                boxShadow:isActive?"0 4px 20px rgba(0,0,0,0.1),0 0 0 1.5px rgba(0,0,0,0.08)":"0 1px 4px rgba(0,0,0,0.05)",
+                transition:"all 0.2s ease",
+              }}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:isActive?"12px":"0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                    <div style={{width:"34px",height:"34px",borderRadius:"10px",background:isActive?"#111":"#EBEBEB",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"10px",fontFamily:"'DM Sans',sans-serif",fontWeight:700,letterSpacing:"1px",color:isActive?"#FFF":"#888"}}>{DAY_SHORT[i]}</div>
+                    <span style={{fontSize:"15px",fontWeight:700,color:"#111"}}>{day}</span>
+                  </div>
+                  {!isActive&&(hasMeal
+                    ?<div style={{display:"flex",gap:"4px",flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"190px"}}>
+                      {MEALS.map(m=>meals[day][m]&&(
+                        <span key={m} style={{fontSize:"11px",color:"#666",background:"#F0F0F0",padding:"2px 6px",borderRadius:"6px"}}>
+                          {MEAL_EMOJI[m]} {meals[day][m].length>6?meals[day][m].slice(0,6)+"…":meals[day][m]}
+                        </span>
+                      ))}
+                    </div>
+                    :<span style={{fontSize:"12px",color:"#BBB"}}>未設定</span>
+                  )}
+                </div>
+
+                {isActive&&MEALS.map(meal=>{
+                  const key=`${day}-${meal}`;
+                  const isEdit=editCell===key;
+                  const dish=meals[day][meal];
+                  const rv=dish?getDishReview(day,meal,dish):null;
+                  const avg=getAvgStars(rv);
+                  return (
+                    <div key={meal} style={{display:"flex",alignItems:"center",gap:"10px",padding:"11px 13px",background:"#F7F7F7",borderRadius:"12px",border:"1px solid #EBEBEB",marginBottom:"7px"}}>
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:"26px"}}>
+                        <span style={{fontSize:"15px"}}>{MEAL_EMOJI[meal]}</span>
+                        <span style={{fontSize:"10px",fontWeight:700,color:"#999",letterSpacing:"1px",marginTop:"1px"}}>{meal}</span>
+                      </div>
+                      <div style={{flex:1}}>
+                        {isEdit?(
+                          <div style={{display:"flex",gap:"7px",alignItems:"center"}}>
+                            <input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEdit(day,meal)} placeholder="料理名を入力…"
+                              style={{flex:1,border:"1.5px solid #DDD",borderRadius:"8px",padding:"8px 11px",fontSize:"14px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#111"}}/>
+                            <button onClick={()=>saveEdit(day,meal)} style={{padding:"8px 12px",background:"#111",color:"#FFF",border:"none",borderRadius:"8px",cursor:"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>保存</button>
+                          </div>
+                        ):(
+                          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                            <div onClick={e=>{e.stopPropagation();startEdit(day,meal);}} style={{fontSize:"14px",color:dish?"#111":"#CCC",fontWeight:dish?600:400,cursor:"text",flex:1}}>
+                              {dish||"タップして入力…"}
+                            </div>
+                            {dish&&(
+                              <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                                {avg>0&&<span style={{fontSize:"12px",color:"#F5C842",fontWeight:700}}>{"★".repeat(avg)}</span>}
+                                {hasMakeAgain(rv)&&<span style={{fontSize:"13px"}}>❤️</span>}
+                                <button onClick={e=>{e.stopPropagation();setReviewModal({day,meal,dish});}} style={{padding:"4px 8px",background:"#EBEBEB",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"11px",color:"#555",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>感想</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ═══ REVIEW LOG ═══ */}
+      {activeTab==="review" && (
+        <div style={{padding:"0 24px 100px",zIndex:1,position:"relative"}}>
+          {/* Make-again list */}
+          {reviewLog.filter(r=>r.makeAgain).length>0&&(
+            <div style={{marginBottom:"20px"}}>
+              <div style={{fontSize:"11px",fontWeight:700,letterSpacing:"2px",color:"#555",textTransform:"uppercase",marginBottom:"8px",fontFamily:"'DM Sans',sans-serif"}}>❤️ また作りたいリスト</div>
+              <div style={{background:"#FFF",borderRadius:"16px",overflow:"hidden",boxShadow:"0 4px 12px rgba(0,0,0,0.06)"}}>
+                {reviewLog.filter(r=>r.makeAgain).map((r,i,arr)=>(
+                  <div key={r.key} style={{display:"flex",alignItems:"center",gap:"12px",padding:"12px 16px",borderBottom:i<arr.length-1?"1px solid rgba(184,149,106,0.1)":"none"}}>
+                    <span style={{fontSize:"20px"}}>❤️</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:"15px",fontWeight:700,color:"#111"}}>{r.dish}</div>
+                      <div style={{fontSize:"11px",color:"#666",marginTop:"2px"}}>{r.day} {MEAL_EMOJI[r.meal]} {r.meal}</div>
+                    </div>
+                    <div style={{fontSize:"13px",color:"#F5C842",fontWeight:700}}>{"★".repeat(r.avg)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* All reviews */}
+          <div style={{fontSize:"11px",fontWeight:700,letterSpacing:"2px",color:"#555",textTransform:"uppercase",marginBottom:"10px",fontFamily:"'DM Sans',sans-serif"}}>📝 感想ログ</div>
+          {reviewLog.length===0?(
+            <div style={{textAlign:"center",padding:"48px",color:"#CCC",fontSize:"14px"}}>
+              <div style={{fontSize:"40px",marginBottom:"12px"}}>💬</div>
+              献立タブで料理名の「感想」ボタンから記録できます
+            </div>
+          ):(
+            reviewLog.map(r=>(
+              <div key={r.key} style={{background:"#FFF",borderRadius:"18px",padding:"16px",marginBottom:"10px",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"10px"}}>
+                  <div>
+                    <div style={{fontSize:"16px",fontWeight:700,color:"#111"}}>{r.dish}</div>
+                    <div style={{fontSize:"12px",color:"#666",marginTop:"2px"}}>{r.day} · {MEAL_EMOJI[r.meal]} {r.meal}</div>
+                  </div>
+                  <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+                    {r.makeAgain&&<span style={{fontSize:"11px",background:"#111",color:"#FFF",borderRadius:"10px",padding:"2px 8px",fontWeight:700}}>また作って！</span>}
+                    {r.avg>0&&<span style={{fontSize:"13px",color:"#F5C842",fontWeight:700}}>{"★".repeat(r.avg)}</span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  {MEMBERS.map(m=>{
+                    const mv=r.rv[m.id];
+                    if(!mv||(!mv.stars&&!mv.comment&&!mv.makeAgain&&!mv.photo)) return null;
+                    return (
+                      <div key={m.id} style={{display:"flex",gap:"10px",alignItems:"flex-start",padding:"8px 10px",background:"#F7F7F7",borderRadius:"12px"}}>
+                        <span style={{fontSize:"18px"}}>{m.icon}</span>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
+                            <span style={{fontSize:"12px",fontWeight:700,color:"#111"}}>{m.name}</span>
+                            {mv.stars>0&&<span style={{fontSize:"12px",color:"#F5C842"}}>{"★".repeat(mv.stars)}</span>}
+                            {mv.makeAgain&&<span style={{fontSize:"11px"}}>❤️</span>}
+                          </div>
+                          {mv.comment&&<div style={{fontSize:"13px",color:"#111",lineHeight:1.5}}>{mv.comment}</div>}
+                          {mv.photo&&<img src={mv.photo} alt="" style={{width:"60px",height:"60px",borderRadius:"10px",objectFit:"cover",marginTop:"6px"}}/>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={()=>setReviewModal({day:r.day,meal:r.meal,dish:r.dish})} style={{marginTop:"10px",padding:"6px 14px",background:"#EBEBEB",border:"none",borderRadius:"10px",cursor:"pointer",fontSize:"12px",color:"#666",fontWeight:600,fontFamily:"'Noto Sans JP',sans-serif"}}>編集</button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ═══ FRIDGE ═══ */}
+      {activeTab==="fridge"&&(
+        <div style={{padding:"0 24px 100px",zIndex:1,position:"relative"}}>
+          <div style={{display:"flex",gap:"10px",marginBottom:"14px"}}>
+            {[{label:"食材数",value:`${fridge.length}品`,icon:"🥬"},{label:"期限注意",value:`${fridge.filter(f=>getExpStatus(f.exp)==="soon").length}品`,icon:"⚠️"},{label:"期限切れ",value:`${fridge.filter(f=>getExpStatus(f.exp)==="expired").length}品`,icon:"🚫"}].map(s=>(
+              <div key={s.label} style={{flex:1,background:"#FFF",borderRadius:"16px",padding:"12px",textAlign:"center",boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+                <div style={{fontSize:"20px",marginBottom:"4px"}}>{s.icon}</div>
+                <div style={{fontSize:"17px",fontWeight:700,color:"#111"}}>{s.value}</div>
+                <div style={{fontSize:"10px",color:"#666",marginTop:"2px"}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>setShowFridgeAdd(p=>!p)} style={{width:"100%",padding:"12px",border:"2px dashed #DDD",borderRadius:"16px",background:"transparent",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:"14px",fontWeight:600,color:"#555",marginBottom:"12px"}}>＋ 食材を追加</button>
+          {showFridgeAdd&&(
+            <div style={{background:"#FFF",borderRadius:"20px",padding:"16px",marginBottom:"12px",boxShadow:"0 2px 12px rgba(0,0,0,0.08)"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"10px"}}>
+                <input value={newFridge.name} onChange={e=>setNewFridge(p=>({...p,name:e.target.value}))} placeholder="食材名" style={{border:"1.5px solid #E0E0E0",borderRadius:"10px",padding:"9px 12px",fontSize:"14px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#111"}}/>
+                <input value={newFridge.qty} onChange={e=>setNewFridge(p=>({...p,qty:e.target.value}))} placeholder="量（例：3個）" style={{border:"1.5px solid #E0E0E0",borderRadius:"10px",padding:"9px 12px",fontSize:"14px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#111"}}/>
+              </div>
+              <div style={{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}}>
+                {FRIDGE_CATS.map(c=>(
+                  <button key={c} onClick={()=>setNewFridge(p=>({...p,cat:c}))} style={{padding:"4px 10px",borderRadius:"20px",border:"none",cursor:"pointer",fontSize:"12px",fontFamily:"'Noto Sans JP',sans-serif",fontWeight:600,background:newFridge.cat===c?"#111":"rgba(184,149,106,0.12)",color:newFridge.cat===c?"#FFF":"#8B7355",transition:"all 0.15s"}}>{c}</button>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+                <input type="date" value={newFridge.exp} onChange={e=>setNewFridge(p=>({...p,exp:e.target.value}))} style={{flex:1,border:"1.5px solid #E0E0E0",borderRadius:"10px",padding:"9px 12px",fontSize:"13px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#666"}}/>
+                <button onClick={addFridgeItem} style={{padding:"9px 20px",background:"#111",color:"#FFF",border:"none",borderRadius:"12px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:"13px",fontWeight:700,boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}>追加</button>
+              </div>
+            </div>
+          )}
+          {Object.entries(fridgeByGroup).map(([cat,items])=>(
+            <div key={cat} style={{marginBottom:"12px"}}>
+              <div style={{fontSize:"11px",fontWeight:700,letterSpacing:"2px",color:"#555",textTransform:"uppercase",marginBottom:"7px",paddingLeft:"4px",fontFamily:"'DM Sans',sans-serif"}}>{cat}</div>
+              <div style={{background:"#FFF",borderRadius:"16px",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                {items.map((item,idx)=>{
+                  const expS=getExpStatus(item.exp);
+                  return (
+                    <div key={item.id} style={{display:"flex",alignItems:"center",padding:"12px 16px",borderBottom:idx<items.length-1?"1px solid #F0F0F0":"none":"none"}}>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                          <span style={{fontSize:"15px",fontWeight:600,color:"#111"}}>{item.name}</span>
+                          {expS==="expired"&&<span style={{fontSize:"11px",background:"#FF4444",color:"#FFF",borderRadius:"6px",padding:"1px 6px",fontWeight:700}}>期限切れ</span>}
+                          {expS==="soon"&&<span style={{fontSize:"11px",background:"#FF9900",color:"#FFF",borderRadius:"6px",padding:"1px 6px",fontWeight:700}}>もうすぐ</span>}
+                        </div>
+                        <div style={{display:"flex",gap:"10px",marginTop:"2px"}}>
+                          <span style={{fontSize:"12px",color:"#666"}}>{item.qty||"−"}</span>
+                          {item.exp&&<span style={{fontSize:"12px",color:expS==="ok"?"#A0B080":expS==="soon"?"#FF9900":"#FF4444"}}>{item.exp}</span>}
+                        </div>
+                      </div>
+                      <button onClick={()=>removeFridge(item.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:"18px",color:"#D4C4B0",padding:"4px",lineHeight:1}}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {fridge.length===0&&<div style={{textAlign:"center",padding:"48px",color:"#CCC",fontSize:"14px"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🧊</div>食材を追加してください</div>}
+        </div>
+      )}
+
+      {/* ═══ SHOPPING ═══ */}
+      {activeTab==="shopping"&&(
+        <div style={{padding:"0 24px 100px",zIndex:1,position:"relative"}}>
+          <div style={{background:"#FFF",borderRadius:"20px",padding:"16px 20px",marginBottom:"12px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+              <span style={{fontSize:"11px",fontWeight:700,color:"#666",letterSpacing:"2px",textTransform:"uppercase",fontFamily:"'DM Sans',sans-serif"}}>Liste des Courses</span>
+              <span style={{fontSize:"14px",color:"#555",fontWeight:700}}>{shopDone} / {shopTotal} 完了</span>
+            </div>
+            <div style={{height:"6px",background:"#EBEBEB",borderRadius:"3px",overflow:"hidden"}}>
+              <div style={{height:"100%",width:shopTotal?`${(shopDone/shopTotal)*100}%`:"0%",background:"#111",borderRadius:"3px",transition:"width 0.4s ease"}}/>
+            </div>
+          </div>
+
+          <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
+            <button onClick={()=>{setShowTemplates(p=>!p);setShowAutoplan(false);}} style={{flex:1,padding:"10px",border:"none",borderRadius:"14px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:"12px",fontWeight:700,background:showTemplates?`linear-gradient(135deg,${gold},#8B6340)`:cream,color:showTemplates?"#FFF":"#666":"#8B7355",boxShadow:showTemplates?`0 4px 16px rgba(184,149,106,0.4)`:"0 2px 8px rgba(0,0,0,0.06)",transition:"all 0.2s"}}>📦 テンプレ</button>
+            <button onClick={()=>{setShowAutoplan(p=>!p);setShowTemplates(false);}} style={{flex:1,padding:"10px",border:"none",borderRadius:"14px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:"12px",fontWeight:700,background:showAutoplan?`linear-gradient(135deg,${gold},#8B6340)`:cream,color:showAutoplan?"#FFF":"#666":"#8B7355",boxShadow:showAutoplan?`0 4px 16px rgba(184,149,106,0.4)`:"0 2px 8px rgba(0,0,0,0.06)",transition:"all 0.2s"}}>✨ AI提案</button>
+          </div>
+
+          {showTemplates&&(
+            <div style={{background:"#FFF",borderRadius:"20px",padding:"16px",marginBottom:"12px",boxShadow:"0 2px 12px rgba(0,0,0,0.08)"}}>
+              <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"10px"}}>テンプレートから追加</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+                {TEMPLATES.map(t=>(
+                  <button key={t.id} onClick={()=>addTemplate(t)} style={{padding:"12px 10px",border:"1px solid #EBEBEB",borderRadius:"14px",background:"#FFF",cursor:"pointer",textAlign:"left",fontFamily:"'Noto Sans JP',sans-serif",transition:"all 0.15s"}}>
+                    <div style={{fontSize:"22px",marginBottom:"4px"}}>{t.icon}</div>
+                    <div style={{fontSize:"12px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{t.label}</div>
+                    <div style={{fontSize:"10px",color:"#888"}}>{t.items.length}品目</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showAutoplan&&(
+            <div style={{background:"#FFF",borderRadius:"20px",padding:"16px",marginBottom:"12px",boxShadow:"0 2px 12px rgba(0,0,0,0.08)"}}>
+              <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"4px"}}>✨ AI 買い出し提案</div>
+              <div style={{fontSize:"12px",color:"#666",marginBottom:"10px",lineHeight:1.5}}>今週の献立から、冷蔵庫・リストにない食材を提案します。</div>
+              <div style={{background:"#F5F5F5",borderRadius:"12px",padding:"8px 12px",marginBottom:"10px",fontSize:"12px",color:"#666"}}>
+                📋 {Object.values(meals).flatMap(d=>Object.values(d)).filter(Boolean).join("・")||"献立未入力"}
+              </div>
+              {aiSuggestions.length===0&&!aiLoading&&(
+                <button onClick={generateAutoplan} style={{width:"100%",padding:"12px",background:"#111",color:"#FFF",border:"none",borderRadius:"14px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:"14px",fontWeight:700,boxShadow:"0 2px 10px rgba(0,0,0,0.15)"}}>🤖 AIに食材を提案してもらう</button>
+              )}
+              {aiLoading&&<div style={{textAlign:"center",padding:"20px",color:"#666",fontSize:"13px"}}><div style={{fontSize:"28px",marginBottom:"8px",display:"inline-block",animation:"spin 1s linear infinite"}}>⏳</div><div>AIが分析中…</div></div>}
+              {aiError&&<div style={{background:"#FFF0F0",borderRadius:"10px",padding:"10px 12px",fontSize:"12px",color:"#CC3333"}}>{aiError}</div>}
+              {aiSuggestions.length>0&&(
+                <div>
+                  <div style={{fontSize:"12px",fontWeight:700,color:"#111",marginBottom:"8px"}}>{aiSuggestions.length}品の食材が見つかりました</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:"6px",marginBottom:"10px"}}>
+                    {aiSuggestions.map((item,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",background:"#FFF",borderRadius:"12px",padding:"10px 12px",gap:"10px"}}>
+                        <div style={{flex:1}}>
+                          <span style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{item.text}</span>
+                          <span style={{fontSize:"11px",color:"#666",marginLeft:"8px",background:"#EBEBEB",padding:"1px 6px",borderRadius:"6px"}}>{item.cat}</span>
+                          {item.reason&&<div style={{fontSize:"11px",color:"#888",marginTop:"2px"}}>← {item.reason}</div>}
+                        </div>
+                        <button onClick={()=>addSuggestion(item)} style={{padding:"6px 12px",background:"#111",color:"#FFF",border:"none",borderRadius:"10px",cursor:"pointer",fontSize:"12px",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif",flexShrink:0}}>追加</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",gap:"8px"}}>
+                    <button onClick={addAllSuggestions} style={{flex:1,padding:"11px",background:"#111",color:"#FFF",border:"none",borderRadius:"12px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:"13px",fontWeight:700}}>すべて追加</button>
+                    <button onClick={generateAutoplan} style={{padding:"11px 14px",background:"#EBEBEB",color:"#666",border:"none",borderRadius:"12px",cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontSize:"12px",fontWeight:600}}>再提案</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{background:"#FFF",borderRadius:"20px",padding:"14px",marginBottom:"12px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+            <div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
+              <input value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addShop()} placeholder="食材を手入力…"
+                style={{flex:1,border:"1.5px solid #E0E0E0",borderRadius:"12px",padding:"10px 14px",fontSize:"14px",fontFamily:"'Noto Sans JP',sans-serif",background:"#FFF",color:"#111"}}/>
+              <button onClick={addShop} style={{padding:"10px 16px",background:"#111",color:"#FFF",border:"none",borderRadius:"12px",cursor:"pointer",fontSize:"22px",fontWeight:700,lineHeight:1,boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}>+</button>
+            </div>
+            <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+              {SHOP_CATS.map(c=>(
+                <button key={c} onClick={()=>setNewCat(c)} style={{padding:"3px 9px",borderRadius:"20px",border:"none",cursor:"pointer",fontSize:"11px",fontFamily:"'Noto Sans JP',sans-serif",fontWeight:600,background:newCat===c?"#111":"rgba(184,149,106,0.12)",color:newCat===c?"#FFF":"#8B7355",transition:"all 0.15s"}}>{c}</button>
+              ))}
+            </div>
+          </div>
+
+          {Object.entries(shopByGroup).map(([cat,items])=>(
+            <div key={cat} style={{marginBottom:"12px"}}>
+              <div style={{fontSize:"11px",fontWeight:700,letterSpacing:"2px",color:"#555",textTransform:"uppercase",marginBottom:"7px",paddingLeft:"4px",fontFamily:"'DM Sans',sans-serif"}}>{cat}</div>
+              <div style={{background:"#FFF",borderRadius:"16px",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                {items.map((item,idx)=>(
+                  <div key={item.id} style={{display:"flex",alignItems:"center",padding:"12px 16px",borderBottom:idx<items.length-1?"1px solid #F0F0F0":"none":"none"}}>
+                    <div onClick={()=>toggleShop(item.id)} style={{width:"24px",height:"24px",borderRadius:"8px",cursor:"pointer",flexShrink:0,border:item.done?"none":"2px solid rgba(184,149,106,0.4)",background:item.done?"#111":"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
+                      {item.done&&<span style={{color:"#FFF",fontSize:"12px",fontWeight:700}}>✓</span>}
+                    </div>
+                    <div style={{flex:1,marginLeft:"12px"}}>
+                      <span style={{fontSize:"15px",fontWeight:item.done?400:500,color:item.done?"#C4B49A":dark,textDecoration:item.done?"line-through":"none",transition:"all 0.2s"}}>{item.text}</span>
+                      {item.done&&<div style={{fontSize:"10px",color:"#555",marginTop:"1px",fontWeight:600}}>🧊 冷蔵庫に追加済み</div>}
+                    </div>
+                    <button onClick={()=>removeShop(item.id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:"18px",color:"#D4C4B0",padding:"4px",lineHeight:1}}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {shopTotal===0&&<div style={{textAlign:"center",padding:"48px",color:"#CCC",fontSize:"14px"}}><div style={{fontSize:"40px",marginBottom:"12px"}}>🛒</div>食材を追加してください</div>}
+        </div>
+      )}
+
+      <div style={{position:"fixed",bottom:0,left:0,right:0,height:"80px",background:"linear-gradient(transparent,#F2F2F2)",pointerEvents:"none",zIndex:2}}/>
+
+      {/* Modals */}
+      {reviewModal&&(
+        <ReviewModal
+          dish={reviewModal.dish}
+          dayMeal={`${reviewModal.day} ${MEAL_EMOJI[reviewModal.meal]} ${reviewModal.meal}`}
+          existing={reviews[reviewKey(reviewModal.day,reviewModal.meal,reviewModal.dish)]}
+          onSave={rv=>{ setReviews(p=>({...p,[reviewKey(reviewModal.day,reviewModal.meal,reviewModal.dish)]:rv})); setReviewModal(null); }}
+          onClose={()=>setReviewModal(null)}
+        />
+      )}
+      {showAISuggest&&(
+        <AISuggestModal fridge={fridge} meals={meals} onApply={applyAISuggest} onClose={()=>setShowAISuggest(false)}/>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
