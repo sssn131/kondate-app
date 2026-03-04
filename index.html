@@ -417,6 +417,8 @@ function App(){
   const startEdit=(d,mt,dt)=>{setEditCell(d+"-"+mt+"-"+dt);setEditVal(meals[d][mt][dt].name);};
   const saveEdit=(d,mt,dt)=>{const nxt=editVal.trim();setMeals(p=>({...p,[d]:{...p[d],[mt]:{...p[d][mt],[dt]:{...p[d][mt][dt],name:nxt}}}}));setEditCell(null);if(nxt)setFridge(f=>f.filter(x=>x.name!==nxt));};
   const applyAI=result=>{setMeals(p=>{const nxt=JSON.parse(JSON.stringify(p));DAYS.forEach(d=>{if(!result[d])return;MEAL_TYPES.forEach(mt=>{if(!result[d][mt])return;DISH_TYPES.forEach(dt=>{const v=result[d][mt][dt];if(v){if(typeof v==="string"){nxt[d][mt][dt].name=v;}else{nxt[d][mt][dt].name=v.name||"";nxt[d][mt][dt].recipeNote=v.memo||"";nxt[d][mt][dt].recipeUrl=v.url||"";}}});});});return nxt;});setShowAI(false);};
+  const clearWeek=()=>{if(window.confirm("1週間の献立をすべて消去しますか？"))setMeals(initMeals());};
+  const clearDish=(d,mt,dt)=>{setMeals(p=>({...p,[d]:{...p[d],[mt]:{...p[d][mt],[dt]:{name:"",recipeNote:"",recipeUrl:""}}}}}));};
   const toggleShop=id=>{setShopping(p=>p.map(i=>{if(i.id!==id)return i;const nd=!i.done;if(nd)setFridge(f=>f.some(x=>x.name===i.text)?f:[...f,{id:Date.now(),name:i.text,qty:"",cat:s2f(i.cat),exp:""}]);else setFridge(f=>f.filter(x=>x.name!==i.text));return{...i,done:nd};}));};
   const rmShop=id=>setShopping(p=>p.filter(i=>i.id!==id));
   const addShop=()=>{if(!newItem.trim())return;setShopping(p=>[...p,{id:Date.now(),text:newItem,done:false,cat:newCat}]);setNewItem("");};
@@ -463,6 +465,9 @@ function App(){
           <div style={{display:"flex",gap:"8px"}}>
             <button onClick={()=>setShowAI(true)} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",width:"48px",height:"48px",background:"#111",borderRadius:"14px",border:"none",cursor:"pointer",boxShadow:"0 4px 14px rgba(0,0,0,0.2)",gap:"2px"}}>
               <span style={{fontSize:"16px"}}>🤖</span><span style={{fontSize:"8px",color:"#FFF",fontWeight:700}}>AI提案</span>
+            </button>
+            <button onClick={clearWeek} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",width:"48px",height:"48px",background:"#FFF",borderRadius:"14px",border:"1px solid #E8E8E8",cursor:"pointer",gap:"2px"}}>
+              <span style={{fontSize:"16px"}}>🗑️</span><span style={{fontSize:"8px",color:"#999",fontWeight:700}}>全消去</span>
             </button>
             <button onClick={()=>setShowSettings(true)} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",width:"48px",height:"48px",background:"#FFF",borderRadius:"14px",border:"1px solid #E8E8E8",cursor:"pointer",gap:"2px"}}>
               <span style={{fontSize:"16px"}}>⚙️</span>
@@ -527,6 +532,7 @@ function App(){
                                   {(md.recipeNote||md.recipeUrl)&&<span style={{fontSize:"11px"}}>📝</span>}
                                   <button onClick={e=>{e.stopPropagation();setReviewModal({d,mt,dt:"主菜",dish:md.name});}} style={{padding:"3px 7px",background:"#EBEBEB",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"10px",color:"#555",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>感想</button>
                                   <button onClick={e=>{e.stopPropagation();setRecipeModal({d,mt,dt:"主菜"});}} style={{padding:"3px 7px",background:"#EBEBEB",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"10px",color:"#555",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>レシピ</button>
+                                  <button onClick={e=>{e.stopPropagation();clearDish(d,mt,"主菜");}} style={{padding:"3px 7px",background:"#FFEEEE",border:"none",borderRadius:"6px",cursor:"pointer",fontSize:"10px",color:"#CC4444",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>×</button>
                                 </div>
                               )}
                             </div>
@@ -548,6 +554,7 @@ function App(){
                               <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
                                 <div onClick={e=>{e.stopPropagation();startEdit(d,mt,dt);}} style={{fontSize:"13px",color:meals[d][mt][dt].name?"#333":"#CCC",cursor:"text",flex:1}}>{meals[d][mt][dt].name||(dt+"を入力…")}</div>
                                 {meals[d][mt][dt].name&&<button onClick={e=>{e.stopPropagation();setRecipeModal({d,mt,dt});}} style={{padding:"2px 6px",background:"#EBEBEB",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"10px",color:"#555",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>レシピ</button>}
+                                {meals[d][mt][dt].name&&<button onClick={e=>{e.stopPropagation();clearDish(d,mt,dt);}} style={{padding:"2px 6px",background:"#FFEEEE",border:"none",borderRadius:"5px",cursor:"pointer",fontSize:"10px",color:"#CC4444",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>×</button>}
                               </div>
                             )}
                           </div>
