@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
   <title>献立アプリ</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet"/>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -31,11 +31,11 @@ const { useState, useEffect, useCallback } = React;
 // ★ 設定：許可するGoogleアカウントのメールアドレスを追加してください
 // ═══════════════════════════════════════════════════════════
 const ALLOWED_EMAILS = [
-  "sssn131@gmail.com",
-  "verb1969taka@gmail.com",
+  "あなたのGmailアドレス@gmail.com",
+  "家族のGmailアドレス@gmail.com",
 ];
 // Google OAuth クライアントID（後述の手順で取得）
-const GOOGLE_CLIENT_ID = "731391064130-3q487staf98ccgumjjn20j5v8t84c53p.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "ここにGoogleクライアントIDを貼る";
 // ═══════════════════════════════════════════════════════════
 
 const DAYS = ["月曜日","火曜日","水曜日","木曜日","金曜日","土曜日","日曜日"];
@@ -481,7 +481,7 @@ function App(){
         </div>
       </header>
 
-      <div style={{display:"flex",padding:"0 20px",gap:"6px",marginBottom:"14px"}}>
+      <div style={{display:"flex",padding:"0 20px",gap:"6px",marginBottom:"14px",position:"sticky",top:0,zIndex:10,background:"#F2F2F2",paddingTop:"8px",paddingBottom:"8px"}}>
         {tabs.map(t=><button key={t.key} onClick={()=>setTab(t.key)} style={tabBtn(tab===t.key)}><div style={{fontSize:"14px",marginBottom:"1px"}}>{t.icon}</div>{t.label}</button>)}
       </div>
 
