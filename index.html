@@ -260,7 +260,7 @@ function AISuggestModal({fridge,meals,reviews,apiKey,onApply,onClose}){
   const favorites=Object.entries(reviews).filter(([,rv])=>rv&&Object.values(rv).some(r=>r.makeAgain||r.stars>=4)).map(([key])=>key.split("-").slice(3).join("-")).filter((v,i,a)=>v&&a.indexOf(v)===i).slice(0,10);
 
   const callGemini = async (prompt) => {
-    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=" + apiKey;
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=" + apiKey;
     const res = await fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
@@ -416,7 +416,7 @@ function App(){
     const sn=new Set(shopping.map(s=>s.text));
     setAiLoad(true);setAiErr("");setAiSug([]);
     try{
-      const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key="+apiKey;
+      const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key="+apiKey;
       const p="料理の食材管理アシスタント。JSONのみ返答。形式:[{\"text\":\"食材名\",\"cat\":\"カテゴリ\",\"reason\":\"料理名\"}] catは:野菜,肉・魚,乳製品,調味料,主食・粉,常備菜,その他。基本調味料は除外。1料理2〜3品のみ。\n献立:"+ns.join("、")+"\n冷蔵庫:"+([...fn].join("、")||"なし")+"\n買い物リスト:"+([...sn].join("、")||"なし")+"\n→ 冷蔵庫にも買い物リストにもない食材だけをJSONで。";
       const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});
       const data=await res.json();
