@@ -2,15 +2,31 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
   <title>献立アプリ</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet"/>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCOjTRBtBZZIw4BvQiXdiL8JpbsvMgoZTo",
+      authDomain: "kondate-app-2b5a8.firebaseapp.com",
+      databaseURL: "https://kondate-app-2b5a8-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "kondate-app-2b5a8",
+      storageBucket: "kondate-app-2b5a8.firebasestorage.app",
+      messagingSenderId: "432359038257",
+      appId: "1:432359038257:web:db68e62f0aacea74ed2410"
+    };
+    firebase.initializeApp(firebaseConfig);
+    window.db = firebase.database();
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --safe-left: env(safe-area-inset-left); --safe-right: env(safe-area-inset-right); }
     body { background: #F2F2F2; font-family: 'Noto Sans JP', sans-serif; }
     input:focus, textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(0,0,0,0.08); }
     button:active { opacity: 0.75; }
@@ -352,6 +368,7 @@ function AISuggestModal({fridge,meals,reviews,apiKey,onApply,onClose}){
 // ── Main App ──────────────────────────────────────────────
 function App(){
   const [authState, setAuthState] = useState("loading"); // loading | login | denied | app
+  const [dbReady, setDbReady] = useState(false);
   const [user, setUser] = useState(null);
   const [deniedEmail, setDeniedEmail] = useState("");
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
@@ -390,13 +407,38 @@ function App(){
   const [showFA,setShowFA]=useState(false);
 
   useEffect(() => {
-    // Google OAuthが設定されていない場合は直接アプリを表示
     if (GOOGLE_CLIENT_ID === "ここにGoogleクライアントIDを貼る") {
       setAuthState("app");
     } else {
       setAuthState("login");
     }
   }, []);
+
+  // Firebase sync - listen for changes
+  useEffect(() => {
+    if (!window.db) return;
+    const ref = window.db.ref("kondate");
+    ref.on("value", (snap) => {
+      const data = snap.val();
+      if (data) {
+        if (data.meals) setMeals(data.meals);
+        if (data.shopping) setShopping(data.shopping);
+        if (data.fridge) setFridge(data.fridge);
+        if (data.reviews) setReviews(data.reviews);
+      }
+      setDbReady(true);
+    });
+    return () => ref.off();
+  }, []);
+
+  // Save to Firebase whenever data changes
+  useEffect(() => {
+    if (!window.db || !dbReady) return;
+    const timer = setTimeout(() => {
+      window.db.ref("kondate").set({ meals, shopping, fridge, reviews });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [meals, shopping, fridge, reviews, dbReady]);
 
   const handleLogin = (userInfo) => { setUser(userInfo); setAuthState("app"); };
   const handleDenied = (email) => { setDeniedEmail(email); setAuthState("denied"); };
@@ -456,7 +498,7 @@ function App(){
 
   return (
     <div style={{minHeight:"100vh",background:"#F2F2F2",maxWidth:"480px",margin:"0 auto"}}>
-      <header style={{padding:"24px 20px 12px"}}>
+      <header style={{paddingTop:"24px",paddingBottom:"12px",paddingLeft:"max(20px, env(safe-area-inset-left))",paddingRight:"max(20px, env(safe-area-inset-right))"}}>
         <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
           <div>
             <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:"10px",letterSpacing:"5px",textTransform:"uppercase",color:"#999",marginBottom:"4px"}}>SEMAINE DU MENU</div>
@@ -478,10 +520,11 @@ function App(){
         <div style={{marginTop:"6px",fontSize:"12px",color:"#999",display:"flex",alignItems:"center",gap:"8px"}}>
           <span>{today.toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"})} の週</span>
           {user&&<span style={{fontSize:"11px",color:"#AAA"}}>· {user.name}</span>}
+          {dbReady&&<span style={{fontSize:"11px",color:"#4CAF50"}}>● 同期中</span>}
         </div>
       </header>
 
-      <div style={{display:"flex",padding:"0 20px",gap:"6px",marginBottom:"14px",position:"sticky",top:0,zIndex:10,background:"#F2F2F2",paddingTop:"8px",paddingBottom:"8px"}}>
+      <div style={{display:"flex",gap:"6px",marginBottom:"14px",position:"sticky",top:0,zIndex:10,background:"#F2F2F2",paddingTop:"8px",paddingBottom:"8px",paddingLeft:"max(20px, env(safe-area-inset-left))",paddingRight:"max(20px, env(safe-area-inset-right))"}}>
         {tabs.map(t=><button key={t.key} onClick={()=>setTab(t.key)} style={tabBtn(tab===t.key)}><div style={{fontSize:"14px",marginBottom:"1px"}}>{t.icon}</div>{t.label}</button>)}
       </div>
 
