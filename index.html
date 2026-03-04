@@ -350,7 +350,22 @@ function AISuggestModal({fridge,meals,reviews,apiKey,onApply,onClose}){
               {DAYS.map((day,i)=>(
                 <div key={day} style={{padding:"10px 14px",borderBottom:i<6?"1px solid #F0F0F0":"none"}}>
                   <div style={{fontSize:"10px",fontWeight:700,color:"#999",letterSpacing:"1px",marginBottom:"5px"}}>{DAY_SHORT[i]}</div>
-                  {MEAL_TYPES.map(mt=>(<div key={mt} style={{marginBottom:"4px",display:"flex",alignItems:"center",gap:"5px",flexWrap:"wrap"}}><span style={{fontSize:"11px",color:"#999",minWidth:"36px"}}>{MEAL_EMOJI[mt]} {mt}</span>{DISH_TYPES.map(dt=><span key={dt} style={{fontSize:"11px",color:"#444",background:"#F5F5F5",padding:"1px 7px",borderRadius:"5px"}}>{result[day]&&result[day][mt]?(result[day][mt][dt]&&result[day][mt][dt].name||"−"):"−"}</span>)}</div>))}
+                  {MEAL_TYPES.map(mt=>(
+                    <div key={mt} style={{marginBottom:"4px",display:"flex",alignItems:"center",gap:"5px",flexWrap:"wrap"}}>
+                      <span style={{fontSize:"11px",color:"#999",minWidth:"36px"}}>{MEAL_EMOJI[mt]} {mt}</span>
+                      {DISH_TYPES.map(dt=>{
+                        const name=result[day]&&result[day][mt]?(result[day][mt][dt]&&result[day][mt][dt].name||""):null;
+                        if(!name) return <span key={dt} style={{fontSize:"11px",color:"#CCC",background:"#F5F5F5",padding:"1px 7px",borderRadius:"5px"}}>−</span>;
+                        const removed=result[day][mt][dt]._removed;
+                        return removed
+                          ? <span key={dt} style={{fontSize:"11px",color:"#CCC",background:"#F5F5F5",padding:"1px 7px",borderRadius:"5px",textDecoration:"line-through"}}>−</span>
+                          : <span key={dt} style={{display:"inline-flex",alignItems:"center",gap:"3px",fontSize:"11px",color:"#444",background:"#F0F0F0",padding:"1px 4px 1px 7px",borderRadius:"5px"}}>
+                              {name}
+                              <button onClick={()=>setResult(p=>{const n=JSON.parse(JSON.stringify(p));n[day][mt][dt]._removed=true;return n;})} style={{background:"none",border:"none",cursor:"pointer",fontSize:"11px",color:"#AAA",padding:"0 2px",lineHeight:1,fontWeight:700}}>×</button>
+                            </span>;
+                      })}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -458,7 +473,7 @@ function App(){
   const toggleExp=(d,mt)=>{const k=d+"-"+mt;setExpanded(p=>({...p,[k]:!p[k]}));};
   const startEdit=(d,mt,dt)=>{setEditCell(d+"-"+mt+"-"+dt);setEditVal(meals[d][mt][dt].name);};
   const saveEdit=(d,mt,dt)=>{const nxt=editVal.trim();setMeals(p=>({...p,[d]:{...p[d],[mt]:{...p[d][mt],[dt]:{...p[d][mt][dt],name:nxt}}}}));setEditCell(null);if(nxt)setFridge(f=>f.filter(x=>x.name!==nxt));};
-  const applyAI=result=>{setMeals(p=>{const nxt=JSON.parse(JSON.stringify(p));DAYS.forEach(d=>{if(!result[d])return;MEAL_TYPES.forEach(mt=>{if(!result[d][mt])return;DISH_TYPES.forEach(dt=>{const v=result[d][mt][dt];if(v){if(typeof v==="string"){nxt[d][mt][dt].name=v;}else{nxt[d][mt][dt].name=v.name||"";nxt[d][mt][dt].recipeNote=v.memo||"";nxt[d][mt][dt].recipeUrl=v.url||"";}}});});});return nxt;});setShowAI(false);};
+  const applyAI=result=>{setMeals(p=>{const nxt=JSON.parse(JSON.stringify(p));DAYS.forEach(d=>{if(!result[d])return;MEAL_TYPES.forEach(mt=>{if(!result[d][mt])return;DISH_TYPES.forEach(dt=>{const v=result[d][mt][dt];if(v&&!v._removed){if(typeof v==="string"){nxt[d][mt][dt].name=v;}else{nxt[d][mt][dt].name=v.name||"";nxt[d][mt][dt].recipeNote=v.memo||"";nxt[d][mt][dt].recipeUrl=v.url||"";}}});});});return nxt;});setShowAI(false);};
   const clearWeek=()=>{if(window.confirm("1週間の献立をすべて消去しますか？"))setMeals(initMeals());};
   const clearDish=(d,mt,dt)=>{setMeals(p=>({...p,[d]:{...p[d],[mt]:{...p[d][mt],[dt]:{name:"",recipeNote:"",recipeUrl:""}}}}));};
   const toggleShop=id=>{setShopping(p=>p.map(i=>{if(i.id!==id)return i;const nd=!i.done;if(nd)setFridge(f=>f.some(x=>x.name===i.text)?f:[...f,{id:Date.now(),name:i.text,qty:"",cat:s2f(i.cat),exp:""}]);else setFridge(f=>f.filter(x=>x.name!==i.text));return{...i,done:nd};}));};
