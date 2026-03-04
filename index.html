@@ -418,7 +418,7 @@ function App(){
   const saveEdit=(d,mt,dt)=>{const nxt=editVal.trim();setMeals(p=>({...p,[d]:{...p[d],[mt]:{...p[d][mt],[dt]:{...p[d][mt][dt],name:nxt}}}}));setEditCell(null);if(nxt)setFridge(f=>f.filter(x=>x.name!==nxt));};
   const applyAI=result=>{setMeals(p=>{const nxt=JSON.parse(JSON.stringify(p));DAYS.forEach(d=>{if(!result[d])return;MEAL_TYPES.forEach(mt=>{if(!result[d][mt])return;DISH_TYPES.forEach(dt=>{const v=result[d][mt][dt];if(v){if(typeof v==="string"){nxt[d][mt][dt].name=v;}else{nxt[d][mt][dt].name=v.name||"";nxt[d][mt][dt].recipeNote=v.memo||"";nxt[d][mt][dt].recipeUrl=v.url||"";}}});});});return nxt;});setShowAI(false);};
   const clearWeek=()=>{if(window.confirm("1週間の献立をすべて消去しますか？"))setMeals(initMeals());};
-  const clearDish=(d,mt,dt)=>{setMeals(p=>({...p,[d]:{...p[d],[mt]:{...p[d][mt],[dt]:{name:"",recipeNote:"",recipeUrl:""}}}}}));};
+  const clearDish=(d,mt,dt)=>{setMeals(p=>({...p,[d]:{...p[d],[mt]:{...p[d][mt],[dt]:{name:"",recipeNote:"",recipeUrl:""}}}}));};
   const toggleShop=id=>{setShopping(p=>p.map(i=>{if(i.id!==id)return i;const nd=!i.done;if(nd)setFridge(f=>f.some(x=>x.name===i.text)?f:[...f,{id:Date.now(),name:i.text,qty:"",cat:s2f(i.cat),exp:""}]);else setFridge(f=>f.filter(x=>x.name!==i.text));return{...i,done:nd};}));};
   const rmShop=id=>setShopping(p=>p.filter(i=>i.id!==id));
   const addShop=()=>{if(!newItem.trim())return;setShopping(p=>[...p,{id:Date.now(),text:newItem,done:false,cat:newCat}]);setNewItem("");};
