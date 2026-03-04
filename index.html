@@ -260,7 +260,7 @@ function AISuggestModal({fridge,meals,reviews,apiKey,onApply,onClose}){
   const favorites=Object.entries(reviews).filter(([,rv])=>rv&&Object.values(rv).some(r=>r.makeAgain||r.stars>=4)).map(([key])=>key.split("-").slice(3).join("-")).filter((v,i,a)=>v&&a.indexOf(v)===i).slice(0,10);
 
   const callGemini = async (prompt) => {
-    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=" + apiKey;
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey;
     const res = await fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
@@ -281,7 +281,6 @@ function AISuggestModal({fridge,meals,reviews,apiKey,onApply,onClose}){
     if(!apiKey){setError("設定からGemini APIキーを入力してください。");return;}
     setLoading(true);setError("");setResult(null);
     try{
-    try{
       const sys='JSONのみ返答。バッククォート不要。\n形式:{"月曜日":{"朝":{"主菜":{"name":"","memo":"","url":""},"副菜":{"name":"","memo":"","url":""},"汁物":{"name":"","memo":"","url":""}},"昼":{...},"夜":{...}},...,"日曜日":{...}}\n朝は軽め。汁物は味噌汁・スープ。副菜は小鉢・サラダ。料理名は短く。memoには簡単な材料と調理ポイントを50字程度で。urlにはクックパッドやDelish Kitchenなど参考URLを入れる（例:https://cookpad.com/search/料理名）。';
       const text=await callGemini(sys+"\n\n"+buildPrompt());
       const raw=JSON.parse(text.replace(/```json|```/g,"").trim());
@@ -299,6 +298,7 @@ function AISuggestModal({fridge,meals,reviews,apiKey,onApply,onClose}){
         });
       });
       setResult(normalized);
+    }catch(e){setError("エラー: "+e.message);}
     setLoading(false);
   };
 
@@ -430,7 +430,7 @@ function App(){
     const sn=new Set(shopping.map(s=>s.text));
     setAiLoad(true);setAiErr("");setAiSug([]);
     try{
-      const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key="+apiKey;
+      const url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+apiKey;
       const p="料理の食材管理アシスタント。JSONのみ返答。形式:[{\"text\":\"食材名\",\"cat\":\"カテゴリ\",\"reason\":\"料理名\"}] catは:野菜,肉・魚,乳製品,調味料,主食・粉,常備菜,その他。基本調味料は除外。1料理2〜3品のみ。\n献立:"+ns.join("、")+"\n冷蔵庫:"+([...fn].join("、")||"なし")+"\n買い物リスト:"+([...sn].join("、")||"なし")+"\n→ 冷蔵庫にも買い物リストにもない食材だけをJSONで。";
       const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:p}]}]})});
       const data=await res.json();
